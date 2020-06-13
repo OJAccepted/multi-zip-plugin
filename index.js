@@ -42,6 +42,7 @@ class MultiZipPlugin{
 
     apply(compiler){
         compiler.hooks.emit.tapAsync("MultiZipPlugin", (compilation, callback) => {
+            debugger;
             this.buildPath = compilation.options.output.path;       // 打包的文件路径
             let zipFile = new yazl.ZipFile();
             
