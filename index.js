@@ -1,8 +1,6 @@
 const fs = require('fs');
-const path = require('path');
 var yazl = require('yazl');
 
-const stringRandom = require('string-random');
 
 /* 
     先写一个简单的版本，后面在想异步优化
@@ -10,20 +8,21 @@ const stringRandom = require('string-random');
 */
 class MultiZipPlugin{
     constructor(options){
+        console.log(options);
         this.options = options;
     }
 
     // 递归加入文件夹
-    addDirectory(zipfile, src){
-        if (fs.lstatSync(this.buildPath + src).isDirectory()){
-            zipfile.addEmptyDirectory(src);
+    addDirectory(zipFile, src){
+        if (fs.lstatSync(this.buildPath + "/" + src).isDirectory()){
+            zipFile.addEmptyDirectory(src);
 
-            let files = fs.readdirSync(this.buildPath + src);
+            let files = fs.readdirSync(this.buildPath + "/" + src);
             for (let file in files){
-                addDirectory(zipfile, this.buildPath + src + file);
+                addDirectory(zipFile, src + "/" + file);
             }
         }else{
-            zipfile.addFile(this.buildPath + src + file, this.buildPath + src + file);
+            zipFile.addFile(this.buildPath + "/" + src, src);
         }
     }
 
@@ -41,37 +40,50 @@ class MultiZipPlugin{
     }
 
     apply(compiler){
-        compiler.hooks.emit.tapAsync("MultiZipPlugin", (compilation, callback) => {
+        compiler.hooks.afterEmit.tapAsync("MultiZipPlugin", (compilation, callback) => {
+            console.log(this.options);
+            
             debugger;
             this.buildPath = compilation.options.output.path;       // 打包的文件路径
             let zipFile = new yazl.ZipFile();
             
-            for (let option in this.options){
+            for (let k in this.options){
                 // 对每个配置去打包
+                let option = this.options[k];
                 let entrys = option.entrys;    // 要打包文件的数组
                 let zipName = option.zipName;  // 最后输出的文件名
                 let zipPath = option.zipPath;  // 打包文件输出的路径
 
-                let dirName = stringRandom(16)
-                fs.mkdirSync(zipPath, dirName);
-
                 // 这里一点一点的把入口文件输出到目标文件夹里
-                for (let entry in entrys){
-                    let files = fs.readdirSync(entry);
-                    for (let file in files){
-                        if (fs.lstatSync(file).isDirectory()){
+                for (let i in entrys){
+                    // 如果不存在则跳过
+                    if (!fs.existsSync(this.buildPath + "/" + entrys[i])){
+                        continue;
+                    }
+
+                    // 判断一下是文件还是文件夹
+                    if (!fs.lstatSync(this.buildPath + "/" + entrys[i]).isDirectory()){
+                        zipFile.addFile(this.buildPath + "/" + entrys[i], entrys[i]);
+                        continue;
+                    }
+
+                    // 递归处理文件夹
+                    let files = fs.readdirSync(this.buildPath + "/" + entrys[i]);
+                    for (let j in files){
+                        if (fs.lstatSync(this.buildPath + "/" + entrys[i] + "/" + files[j]).isDirectory()){
+                            addDirectory(zipFile, entrys[i] + "/" + files[j]);
                         }else{
-                            zipfile.addFile(file, file);
+                            zipFile.addFile(this.buildPath + "/" + entrys[i] + "/" + files[j], entrys[i] + "/" + files[j]);
                         }
                     }
                 }
 
-                zipfile.outputStream.pipe(fs.createWriteStream(zipName + ".zip")).on("close", function() {
+                zipFile.outputStream.pipe(fs.createWriteStream(this.buildPath + "/" + zipName + ".zip")).on("close", function() {
                     console.log(zipName + " done");
                   });
 
                 // 打一个包
-                zipfile.end();
+                zipFile.end();
             }
 
             callback();
